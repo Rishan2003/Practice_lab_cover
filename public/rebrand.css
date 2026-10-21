@@ -32,18 +32,17 @@ footer,
 .exam-library__title,
 .mocktest-card__progress,
 .mocktest-wrapper > *:nth-child(n+3),
-.menu,
 .sitemap,
 .congrat-box__header,
-.col-right,
 .user-feedback,
-.section-image,
-.exam-card,
 .bc-right,
 #js-practice-menu,
 .realtest-header__bt-review {
   display: none !important;
 }
+
+/* Keep generic layout columns, question images and exam cards visible.
+   Add page-specific selectors here when an unwanted element is confirmed. */
 
 /* 3. Skill Navigation Active/Hover Red Theme */
 body .skill-nav .skill-nav__item.-listening.active,

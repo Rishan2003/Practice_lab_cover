@@ -1,26 +1,47 @@
 // public/rebrand.js
 (function () {
-  const OLD_DOMAIN = "ieltsonlinetests.com";
+  "use strict";
+
+  if (window.__HEXA_REBRAND__) return;
+  const script = document.currentScript;
+  const upstream = new URL(
+    script?.dataset.upstreamOrigin || "https://ieltsonlinetests.com"
+  );
+  const status = { version: "3.0", ready: false, upstreamOrigin: upstream.origin };
+  window.__HEXA_REBRAND__ = status;
   const HEXA_ICON_URL =
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6mu5DrAMRkonoOCdbuJBIbnIfJ47KwxumRA&s";
 
-  // 1. Route any hardcoded client-side fetch/XHR requests through our Vercel proxy
-  const originalFetch = window.fetch;
-  window.fetch = function (input, init) {
-    if (typeof input === "string" && input.includes(OLD_DOMAIN)) {
-      input = input
-        .replace(`https://${OLD_DOMAIN}`, window.location.origin)
-        .replace(`http://${OLD_DOMAIN}`, window.location.origin);
+  // 1. Install synchronously in <head>, before upstream scripts execute.
+  // Use normal JavaScript: no eval(), Function constructor or string timers.
+  function localUrl(value) {
+    const original = String(value);
+    try {
+      const url = new URL(original, window.location.href);
+      if (["http:", "https:"].includes(url.protocol) && url.host === upstream.host) {
+        return window.location.origin + url.pathname + url.search + url.hash;
+      }
+    } catch {
+      // Let fetch/XHR handle invalid inputs using their normal error behavior.
     }
-    return originalFetch.call(this, input, init);
+    return original;
+  }
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    if (input instanceof Request) {
+      const rewritten = localUrl(input.url);
+      if (rewritten !== input.url) input = new Request(rewritten, input);
+    } else if (typeof input === "string" || input instanceof URL) {
+      input = localUrl(input);
+    }
+    return originalFetch(input, init);
   };
 
   const originalXhrOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    if (typeof url === "string" && url.includes(OLD_DOMAIN)) {
-      url = url
-        .replace(`https://${OLD_DOMAIN}`, window.location.origin)
-        .replace(`http://${OLD_DOMAIN}`, window.location.origin);
+    if (typeof url === "string" || url instanceof URL) {
+      url = localUrl(url);
     }
     return originalXhrOpen.call(this, method, url, ...rest);
   };
@@ -46,6 +67,14 @@
     }
     setFaviconOnce();
 
+    // Keep dynamically inserted navigation and form submissions on the proxy.
+    document.querySelectorAll("a[href], form[action]").forEach((element) => {
+      const attribute = element.tagName === "FORM" ? "action" : "href";
+      const current = element.getAttribute(attribute);
+      const rewritten = localUrl(current);
+      if (rewritten !== current) element.setAttribute(attribute, rewritten);
+    });
+
     // Replace .logo with HEXA'S h1 heading
     const logoElement = document.getElementsByClassName("logo")[0];
     if (logoElement) {
@@ -69,10 +98,10 @@
     // Main Menu first link adjustments
     const firstMenuLink = document.querySelector(".main-menu__item a");
     if (firstMenuLink) {
-      firstMenuLink.removeAttribute("href");
+      firstMenuLink.setAttribute("href", "/ielts-exam-library");
       const span = firstMenuLink.querySelector("span");
-      if (span && span.textContent !== "New Text") {
-        span.textContent = "New Text";
+      if (span && span.textContent !== "Practice Library") {
+        span.textContent = "Practice Library";
       }
     }
 
@@ -109,17 +138,10 @@
       cardTitles[1].textContent = "IELTS Practice Tests Plus";
     }
 
-    // First .col-md-12 & .col-md-4 hiding (matches your exact querySelector behavior)
-    const firstCol12 = document.querySelector(".col-md-12");
-    if (firstCol12) firstCol12.style.display = "none";
-
-    const firstCol4 = document.querySelector(".col-md-4");
-    if (firstCol4) firstCol4.style.display = "none";
-
     // ==================== WRITING SECTION ====================
     const evalTitle = document.querySelector(".evaluation-widget__title");
-    if (evalTitle && evalTitle.innerHTML !== "Evaluation") {
-      evalTitle.innerHTML = "Evaluation";
+    if (evalTitle && evalTitle.textContent !== "Evaluation") {
+      evalTitle.textContent = "Evaluation";
     }
 
     const congratBody = document.querySelector(".congrat-box__body");
@@ -161,8 +183,6 @@
       }
     });
 
-    document.querySelectorAll(".section-image").forEach((el) => el.remove());
-
     const studentScore = document.querySelector(".student-score");
     if (studentScore) {
       const scoreImg = studentScore.querySelector("img");
@@ -172,26 +192,36 @@
     }
   }
 
-  // Run immediately and observe dynamic DOM updates
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", applyHexaBranding);
-  } else {
-    applyHexaBranding();
-  }
-
+  // Batch upstream changes and disconnect during our own writes to avoid a loop.
   let scheduled = false;
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(scheduleBranding);
+  function scheduleBranding() {
     if (!scheduled) {
       scheduled = true;
-      requestAnimationFrame(() => {
-        applyHexaBranding();
-        scheduled = false;
+      requestAnimationFrame(runBranding);
+    }
+  }
+
+  function runBranding() {
+    observer.disconnect();
+    try {
+      applyHexaBranding();
+      status.ready = true;
+    } finally {
+      scheduled = false;
+      observer.observe(document.documentElement, {
+        childList: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ["class", "href", "action"],
+        subtree: true,
       });
     }
-  });
+  }
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runBranding, { once: true });
+  } else {
+    runBranding();
+  }
 })();
