@@ -1,6 +1,7 @@
 import { createProxy } from "../../lib/proxy.mjs";
 
-export const runtime = "edge";
+// Use Node's server-side HTTP implementation on Vercel.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const handleProxy = createProxy({

@@ -34,7 +34,7 @@ function load() {
 
 test("network hooks install before DOMContentLoaded with string evaluation disabled", async () => {
   const { window, fetchCalls, events } = load();
-  assert.equal(window.__HEXA_REBRAND__.version, "3.0");
+  assert.equal(window.__HEXA_REBRAND__.version, "3.1");
   assert.equal(window.__HEXA_REBRAND__.ready, false);
   assert.equal(events[0][0], "DOMContentLoaded");
   await window.fetch("https://exam.example/api?attempt=1");

@@ -9,6 +9,7 @@ function setup(response, upstream = upstreamOrigin) {
   const calls = [];
   const proxy = createProxy({
     upstreamOrigin: upstream,
+    diagnosticLogger: () => {},
     fetchImpl: async (url, options) => {
       calls.push({ url: String(url), ...options });
       return typeof response === "function" ? response() : response;
@@ -53,7 +54,7 @@ test("HTML receives early branding, title, config and no stale validators", asyn
     assert.equal(result.headers.get(name), null);
   }
   assert.equal(result.headers.get("cache-control"), "private, no-store");
-  assert.equal(result.headers.get("x-hexa-proxy"), "3.0");
+  assert.equal(result.headers.get("x-hexa-proxy"), "3.1");
   assert.equal(result.headers.get("x-frame-options"), "SAMEORIGIN");
   assert.equal(result.headers.get("strict-transport-security"), "max-age=31536000");
 });
@@ -129,7 +130,7 @@ test("Next's normalized loopback URL uses the original Host for redirects and PO
     method: "POST", headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000" },
   }));
   assert.equal(calls[0].headers.get("origin"), upstreamOrigin);
-  assert.equal(calls[0].headers.get("host"), "exam.example");
+  assert.equal(calls[0].headers.get("host"), null);
 });
 
 test("a double-slash request path cannot turn this into an open proxy", async () => {
@@ -226,4 +227,81 @@ test("invalid origins and a self-proxy loop are rejected before fetching", async
     assert.equal((await proxy(request())).status, 500);
     assert.equal(calls.length, 0);
   }
+});
+
+test("forwarding excludes hosting/client-IP metadata but preserves platform authentication headers", async () => {
+  const { proxy, calls } = setup(new Response("ok"));
+  await proxy(request("/answers", { method: "POST", body: "answer=42", headers: {
+    host: "hexa.example", cookie: "session=example", authorization: "Bearer example",
+    "x-csrf-token": "csrf-example", "x-xsrf-token": "xsrf-example", "x-requested-with": "XMLHttpRequest",
+    "x-vercel-id": "hosting-metadata", "x-now-route-matches": "private-routing-data",
+    "x-matched-path": "/[[...slug]]", "x-real-ip": "192.0.2.1",
+    forwarded: "host=proxy.example", "x-forwarded-for": "192.0.2.2",
+    "next-router-state-tree": "internal", "x-unknown-secret": "do-not-forward",
+  } }));
+  const sent = calls[0].headers;
+  for (const name of ["host", "x-vercel-id", "x-now-route-matches", "x-matched-path", "x-real-ip", "forwarded", "x-forwarded-for", "next-router-state-tree", "x-unknown-secret"]) {
+    assert.equal(sent.get(name), null, name + " must not reach the platform");
+  }
+  assert.equal(sent.get("cookie"), "session=example");
+  assert.equal(sent.get("authorization"), "Bearer example");
+  assert.equal(sent.get("x-csrf-token"), "csrf-example");
+  assert.equal(sent.get("x-xsrf-token"), "xsrf-example");
+  assert.equal(sent.get("x-requested-with"), "XMLHttpRequest");
+});
+
+test("upstream 500 is attributed and logged without session data or query parameters", async () => {
+  const logs = [];
+  const proxy = createProxy({ upstreamOrigin, diagnosticLogger: (record) => logs.push(record),
+    fetchImpl: async () => new Response("The website encountered an unexpected error. Please try again later.", {
+      status: 500, headers: { "content-type": "text/html" },
+    }),
+  });
+  const result = await proxy(request("/exam?token=query-secret", { headers: {
+    cookie: "session=cookie-secret", authorization: "Bearer auth-secret",
+  } }));
+  assert.equal(result.status, 500);
+  assert.equal(result.headers.get("x-hexa-upstream-status"), "500");
+  assert.equal(result.headers.get("x-hexa-error-source"), "upstream");
+  assert.equal(result.headers.get("x-hexa-runtime"), "nodejs");
+  assert.equal(logs[0].requestId, result.headers.get("x-hexa-request-id"));
+  assert.equal(logs[0].stage, "upstream-http");
+  assert.equal(logs[0].hasCookie, true);
+  assert.equal(logs[0].hasAuthorization, true);
+  assert.doesNotMatch(JSON.stringify(logs), /query-secret|cookie-secret|auth-secret/);
+  assert.match(await result.text(), /unexpected error/);
+});
+
+test("fetch failures have a different diagnostic source and omit exception messages", async () => {
+  const logs = [];
+  const proxy = createProxy({ upstreamOrigin, diagnosticLogger: (record) => logs.push(record),
+    fetchImpl: async () => { throw new TypeError("Fetch failed at https://example.test/?token=private"); },
+  });
+  const result = await proxy(request());
+  assert.equal(result.status, 502);
+  assert.equal(result.headers.get("x-hexa-upstream-status"), null);
+  assert.equal(result.headers.get("x-hexa-error-source"), "upstream-fetch");
+  assert.equal(logs[0].errorName, "TypeError");
+  assert.doesNotMatch(JSON.stringify(logs), /token=private/);
+});
+
+
+test("Vercel preview access stays out of upstream cookies, URLs and referers", async () => {
+  const { proxy, calls } = setup(() => new Response("ok"));
+  await proxy(request("/tests?skill=listening&_vercel_share=share-secret&x-vercel-protection-bypass=bypass-secret&x-vercel-set-bypass-cookie=true", { headers: {
+    cookie: "_vercel_jwt=hosting-secret; session=platform-session; _vercel_other=hosting-data",
+    referer: proxyOrigin + "/library?skill=reading&_vercel_share=referer-secret",
+    "x-vercel-protection-bypass": "header-secret",
+    "x-vercel-trusted-oidc-idp-token": "oidc-secret",
+  } }));
+  assert.equal(calls[0].url, upstreamOrigin + "/tests?skill=listening");
+  assert.equal(calls[0].headers.get("cookie"), "session=platform-session");
+  assert.equal(calls[0].headers.get("referer"), upstreamOrigin + "/library?skill=reading");
+  assert.doesNotMatch(JSON.stringify([...calls[0].headers]), /hosting|secret/);
+  await proxy(request("/tests", { headers: { cookie: "_vercel_jwt=hosting-only" } }));
+  assert.equal(calls[1].headers.get("cookie"), null);
+  const root = await proxy(request("/?_vercel_share=share-secret"));
+  assert.equal(root.status, 307);
+  assert.equal(root.headers.get("location"), proxyOrigin + DEFAULT_LANDING_PATH);
+  assert.equal(calls.length, 2);
 });

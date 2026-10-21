@@ -7,7 +7,7 @@
   const upstream = new URL(
     script?.dataset.upstreamOrigin || "https://ieltsonlinetests.com"
   );
-  const status = { version: "3.0", ready: false, upstreamOrigin: upstream.origin };
+  const status = { version: "3.1", ready: false, upstreamOrigin: upstream.origin };
   window.__HEXA_REBRAND__ = status;
   const HEXA_ICON_URL =
     "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT6mu5DrAMRkonoOCdbuJBIbnIfJ47KwxumRA&s";

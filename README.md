@@ -35,7 +35,7 @@ Official references:
 
 ## Run locally
 
-Use a supported Node.js version (Node 22 or newer is suitable for this project).
+Use Node.js 24, matching the Vercel project's configured runtime.
 Keep the included lockfile; the dependencies have not been upgraded by this fix.
 
 ```bash
@@ -89,9 +89,16 @@ npm start
 
 In DevTools **Network**, inspect the main document response:
 
-- `x-hexa-proxy: 3.0` confirms the request reached the updated HTML handler.
-- `/rebrand.js?v=3.0` must return JavaScript with status 200.
-- `/rebrand.css?v=3.0` must return CSS with status 200.
+- `x-hexa-proxy: 3.1` confirms the request reached the updated handler.
+- `x-hexa-runtime: nodejs` identifies this version's server runtime.
+- `x-hexa-upstream-status` is the status returned by the original platform.
+  The root redirect and proxy-generated errors do not have this header.
+- `x-hexa-error-source: upstream` means the platform returned an error; values
+  such as `configuration`, `upstream-fetch` or `html-transform` identify a
+  proxy-generated error instead.
+- `x-hexa-request-id` correlates an error with `[hexa-proxy]` in Vercel Runtime Logs.
+- `/rebrand.js?v=3.1` must return JavaScript with status 200.
+- `/rebrand.css?v=3.1` must return CSS with status 200.
 - View Source should show those tags near the start of `<head>`, before the
   platform's scripts. The branding script must not have `defer` or `async`.
 
@@ -101,7 +108,7 @@ In Console, select the page's **top** execution context and enter:
 window.__HEXA_REBRAND__
 ```
 
-After DOMContentLoaded it should report `version: "3.0"`, `ready: true` and the
+After DOMContentLoaded it should report `version: "3.1"`, `ready: true` and the
 configured upstream origin. An extension's isolated execution context cannot see
 this page variable.
 
@@ -109,6 +116,8 @@ this page variable.
 | --- | --- |
 | Error source begins with `chrome-extension://` | Identify/disable the extension; compare with Guest mode. |
 | Branding files are 404 or return HTML | Confirm the Vercel Root Directory and that `public/` was deployed. |
+| Document is 500 with `x-hexa-error-source: upstream` | The original platform returned 500. Match `x-hexa-request-id` in Vercel Runtime Logs; the platform's own server logs are needed for its internal exception. |
+| Document is 500 with `x-hexa-error-source: configuration` | Set `UPSTREAM_ORIGIN` to the original platform's origin only, then redeploy. |
 | Document is 502 | Verify the upstream hostname, availability and server-side reachability. |
 | Document is 403/429 or contains an access challenge | The upstream rejected the request. Use its supported custom-domain/proxy configuration; this code does not bypass access challenges. |
 | Login redirects leave the proxy | External OAuth/SSO callback URLs and allowed domains must be configured with the provider. |
@@ -121,6 +130,14 @@ to start diagnosis.
 
 ## Corrections included
 
+- Version 3.1 uses the Node.js runtime and forwards an explicit set of HTTP,
+  authentication and CSRF headers. Vercel/Next routing headers, client-IP
+  assertions and the proxy's Host are not forwarded. Fetch derives Host from
+  the fixed upstream URL. Vercel preview access cookies and query parameters
+  are removed before forwarding, including from same-origin Referer URLs.
+- Error responses identify the failing stage and include a request ID. Logs
+  contain status, timing and header names, but no cookie/authorization values,
+  request URLs, query strings, bodies or account data.
 - The request hooks load before upstream scripts and accept string, URL and
   Request inputs. POST bodies, credentials, headers and abort signals survive.
 - URL matching uses the configured hostname. Similar-looking and unrelated
@@ -148,10 +165,13 @@ to start diagnosis.
 ## Scope and validation
 
 Validation completed with Node.js 24.19.0 and the archive's locked dependencies:
-23 automated tests passed, the Next.js production build completed, and the
+27 automated tests passed, the Next.js production build completed, and the
 production server smoke test passed for root/login redirects, HTML injection,
-static branding files, separate cookies, POST forwarding and audio byte ranges.
-No live account or real-browser visual exam flow was tested.
+static branding files, separate cookies, POST forwarding, audio byte ranges,
+request-header filtering and upstream-error diagnostics. A direct server-side
+check of the real IELTS library returned HTTP 200 with branding injected.
+No live account or real-browser visual exam flow was tested. A successful local
+check does not establish that requests from Vercel's network will succeed.
 
 The original design removes the upstream document's CSP. This version keeps that
 behavior and handles CSP meta tags too; it does not add `unsafe-eval`. Removing a
