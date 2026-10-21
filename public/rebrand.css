@@ -1,0 +1,77 @@
+/* public/rebrand.css */
+
+/* 1. Header & Site Title Styling */
+.header {
+  background-color: #C8102E !important;
+  margin-bottom: 10px !important;
+}
+
+.site-title {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+  font-size: 22px !important;
+  line-height: 1.3 !important;
+}
+
+/* Hide original logo until JS swaps it with HEXA'S heading */
+.logo {
+  display: none !important;
+}
+
+/* 2. Global Hidden Elements across Exam Library, Writing & Reading Results */
+.main-menu__item:not(:nth-child(-n+2)),
+.book,
+.mocktest-card__pack-taken,
+.collection-tab-controller,
+.mocktest-item__pack-taken,
+.search-box,
+footer,
+.-speaking,
+.pager__items,
+.exam-library__title,
+.mocktest-card__progress,
+.mocktest-wrapper > *:nth-child(n+3),
+.menu,
+.sitemap,
+.congrat-box__header,
+.col-right,
+.user-feedback,
+.section-image,
+.exam-card,
+.bc-right,
+#js-practice-menu,
+.realtest-header__bt-review {
+  display: none !important;
+}
+
+/* 3. Skill Navigation Active/Hover Red Theme */
+body .skill-nav .skill-nav__item.-listening.active,
+body .skill-nav .skill-nav__item.-reading.active,
+body .skill-nav .skill-nav__item.-writing.active,
+body .skill-nav .skill-nav__item.-listening:hover,
+body .skill-nav .skill-nav__item.-reading:hover,
+body .skill-nav .skill-nav__item.-writing:hover {
+  background: #C8102E !important;
+  color: #fff !important;
+}
+
+/* 4. Card Info, Modals & Simulation/Practice Buttons */
+.mocktest-card__infos * {
+  color: #C8102E !important;
+}
+
+.modal-dialog,
+.modal-dialog * {
+  color: #C8102E !important;
+}
+
+.choose-box__btn.btn__practice-test-mode.iot-grbt.-blue,
+.choose-box__btn.btn__simulation-test-mode.iot-grbt.-blue {
+  background: #C8102E !important;
+  color: #fff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-decoration: none !important;
+}
